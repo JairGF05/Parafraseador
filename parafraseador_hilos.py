@@ -1,6 +1,7 @@
 import pandas as pd
 import os
 from transformers import pipeline
+from concurrent.futures import ThreadPoolExecutor
 
 # Cargar modelo de parafraseo más rápido
 paraphrase_pipeline = pipeline("text2text-generation", model="t5-small")
@@ -14,6 +15,18 @@ def parafrasear_texto(texto):
     except Exception as e:
         print(f"Error al parafrasear: {e}")
         return texto
+
+def procesar_fila(row):
+    try:
+        if row.isnull().all():
+            return None
+        if "text" in row:
+            texto_original = str(row["text"])
+            texto_parafraseado = parafrasear_texto(texto_original)
+            return texto_parafraseado
+    except Exception as e:
+        print(f"Error al procesar la fila: {e}")
+    return None
 
 def extraer_y_parafrasear(input_excel, output_file):
     try:
@@ -36,17 +49,12 @@ def extraer_y_parafrasear(input_excel, output_file):
             
             archivo_salida.write(f"\n--- Hoja: {nombre_hoja} ---\n")
             
-            for index, row in data.iterrows():
-                try:
-                    if row.isnull().all():
-                        continue
-                    
-                    if "text" in row:
-                        texto_original = str(row["text"])
-                        texto_parafraseado = parafrasear_texto(texto_original)
-                        archivo_salida.write(f"{texto_parafraseado}\n")
-                except Exception as e:
-                    print(f"Error al procesar la fila {index + 1} en la hoja {nombre_hoja}: {e}")
+            with ThreadPoolExecutor() as executor:
+                resultados = list(executor.map(procesar_fila, [row for _, row in data.iterrows()]))
+            
+            for resultado in resultados:
+                if resultado:
+                    archivo_salida.write(f"{resultado}\n")
     
     print(f"Texto parafraseado guardado en: {output_file}")
 
